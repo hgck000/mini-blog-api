@@ -4,12 +4,13 @@ from sqlalchemy import select
 from app.db.session import get_db
 from app.models.post import Post
 from app.schemas.post import PostCreate, PostUpdate, PostOut
+from app.api.auth import get_current_user
+from app.models import Post, User
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 @router.post("", response_model=PostOut, status_code=status.HTTP_201_CREATED)
 def create_post(payload: PostCreate, db: Session = Depends(get_db)):
-    # tạm hardcode owner_id=1 (Step Auth sẽ thay bằng current_user)
     post = Post(title=payload.title, content=payload.content, owner_id=1)
     db.add(post)
     db.commit()
@@ -39,13 +40,22 @@ def update_post(post_id: int, payload: PostUpdate, db: Session = Depends(get_db)
     return post
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_post(post_id: int, db: Session = Depends(get_db)):
+def delete_post(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     post = db.get(Post, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
+
+    if (post.owner_id != current_user.id) and (not current_user.is_admin):
+        raise HTTPException(status_code=403, detail="Not allowed")
+
     db.delete(post)
     db.commit()
     return
+
 
 @router.get("", response_model=list[PostOut])
 def list_posts(
