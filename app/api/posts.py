@@ -6,6 +6,8 @@ from app.models.post import Post
 from app.schemas.post import PostCreate, PostUpdate, PostOut
 from app.api.auth import get_current_user
 from app.models import Post, User
+from app.api.auth import get_current_user
+from app.models import Post, User
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -25,10 +27,18 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
     return post
 
 @router.put("/{post_id}", response_model=PostOut)
-def update_post(post_id: int, payload: PostUpdate, db: Session = Depends(get_db)):
+def update_post(
+    post_id: int,
+    payload: PostUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     post = db.get(Post, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
+
+    if (post.owner_id != current_user.id) and (not current_user.is_admin):
+        raise HTTPException(status_code=403, detail="Not allowed")
 
     if payload.title is not None:
         post.title = payload.title
@@ -38,6 +48,7 @@ def update_post(post_id: int, payload: PostUpdate, db: Session = Depends(get_db)
     db.commit()
     db.refresh(post)
     return post
+
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_post(
@@ -76,3 +87,19 @@ def list_posts(
         )
 
     return db.scalars(stmt).all()
+
+@router.post("", response_model=PostOut, status_code=status.HTTP_201_CREATED)
+def create_post(
+    payload: PostCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = Post(
+        title=payload.title,
+        content=payload.content,
+        owner_id=current_user.id,
+    )
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return post

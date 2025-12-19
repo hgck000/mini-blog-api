@@ -6,11 +6,27 @@ from app.db.session import get_db
 from app.models import Post, Comment
 from app.schemas.comment import CommentCreate, CommentUpdate, CommentOut
 
+from app.api.auth import get_current_user
+from app.models import Post, Comment, User
+
 router = APIRouter(prefix="/posts/{post_id}/comments", tags=["comments"])
 
 def _ensure_post_exists(db: Session, post_id: int) -> None:
     if not db.get(Post, post_id):
         raise HTTPException(status_code=404, detail="Post not found")
+    
+def create_comment(
+    post_id: int,
+    payload: CommentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_post_exists(db, post_id)
+    comment = Comment(content=payload.content, post_id=post_id, owner_id=current_user.id)
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return comment
 
 @router.post("", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 def create_comment(post_id: int, payload: CommentCreate, db: Session = Depends(get_db)):
