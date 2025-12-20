@@ -8,6 +8,8 @@ from app.api.auth import get_current_user
 from app.models import Post, User
 from app.api.auth import get_current_user
 from app.models import Post, User
+from sqlalchemy import func
+from app.schemas.common import Page
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -103,3 +105,23 @@ def create_post(
     db.commit()
     db.refresh(post)
     return post
+
+@router.get("", response_model=Page[PostOut])
+def list_posts(
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    q: str | None = Query(None, description="search keyword in title/content"),
+):
+    base_stmt = select(Post)
+
+    if q:
+        like = f"%{q}%"
+        base_stmt = base_stmt.where((Post.title.ilike(like)) | (Post.content.ilike(like)))
+
+    total = db.scalar(select(func.count()).select_from(base_stmt.subquery()))
+
+    items_stmt = base_stmt.order_by(Post.id.desc()).offset(skip).limit(limit)
+    items = db.scalars(items_stmt).all()
+
+    return {"items": items, "total": total, "skip": skip, "limit": limit, "q": q}
